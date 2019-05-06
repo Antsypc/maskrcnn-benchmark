@@ -26,6 +26,10 @@ class attentionMixupModule(nn.Module):
         x = torch.index_select(x, 1, indices.to(torch.device('cuda')))
         # 与 8x6xHxW的原图broadcast乘法
         # (8,6,H,W)
+
+        import ipdb
+        ipdb.set_trace()
+
         mixup_img = x * stk_orig_img
         # 将8x6xHxW的上三层与下三层相加得到8x3xHxW返回
         weighted_img1, weighted_img2 = torch.split(mixup_img, [3, 3], dim=1)
