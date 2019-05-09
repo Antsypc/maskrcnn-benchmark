@@ -61,8 +61,10 @@ def do_train(
 
         scheduler.step()
 
+        to_device_time = time.time()
         images = images.to(device)
         targets = [target.to(device) for target in targets]
+        to_device_time = time.time() - to_device_time
 
         loss_dict = model(images, targets)
 
@@ -73,16 +75,22 @@ def do_train(
         losses_reduced = sum(loss for loss in loss_dict_reduced.values())
         meters.update(loss=losses_reduced, **loss_dict_reduced)
 
+        backward_time = time.time()
         optimizer.zero_grad()
         # Note: If mixed precision is not used, this ends up doing nothing
         # Otherwise apply loss scaling for mixed-precision recipe
         with amp.scale_loss(losses, optimizer) as scaled_losses:
             scaled_losses.backward()
+        backward_time = time.time() - backward_time
+
+        params_update_time = time.time()
         optimizer.step()
+        params_update_time = time.time() - params_update_time
 
         batch_time = time.time() - end
         end = time.time()
-        meters.update(time=batch_time, data=data_time)
+        meters.update(time=batch_time, data=data_time, device=to_device_time,
+                      backward=backward_time, update=params_update_time)
 
         eta_seconds = meters.time.global_avg * (max_iter - iteration)
         eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
