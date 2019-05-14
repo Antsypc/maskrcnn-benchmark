@@ -36,6 +36,34 @@ def reduce_loss_dict(loss_dict):
     return reduced_losses
 
 
+class DataPrefetcher(object):
+    def __init__(self, loader, device):
+        self.loader = iter(loader)
+        self.device = device
+        self.stream = torch.cuda.Stream()
+        self.preload()
+
+    def preload(self):
+        try:
+            self.next_input, self.next_target, self.next_idx = next(self.loader)
+        except StopIteration:
+            self.next_input = None
+            self.next_target = None
+            self.next_idx = None
+            return
+        with torch.cuda.stream(self.stream):
+            self.next_input = self.next_input.to(self.device, non_blocking=True)
+            self.next_target = [target.to(self.device, non_blocking=True) for target in self.next_target]
+
+    def next(self):
+        torch.cuda.current_stream().wait_stream(self.stream)
+        input_ = self.next_input
+        target_ = self.next_target
+        idx_ = self.next_idx
+        self.preload()
+        return input_, target_, idx_
+
+
 def do_train(
     model,
     data_loader,
@@ -52,19 +80,27 @@ def do_train(
     max_iter = len(data_loader)
     start_iter = arguments["iteration"]
     model.train()
+
     start_training_time = time.time()
     end = time.time()
-    for iteration, (images, targets, _) in enumerate(data_loader, start_iter):
+
+    # prefetcher = DataPrefetcher(data_loader, torch.cuda.current_device())
+    prefetcher = DataPrefetcher(data_loader, device)
+    images, targets, idx = prefetcher.next()
+    iteration = start_iter
+
+    # for iteration, (images, targets, _) in enumerate(data_loader, start_iter):
+    while images is not None:
         data_time = time.time() - end
         iteration = iteration + 1
         arguments["iteration"] = iteration
 
         scheduler.step()
 
-        to_device_time = time.time()
-        images = images.to(device)
-        targets = [target.to(device) for target in targets]
-        to_device_time = time.time() - to_device_time
+        # to_device_time = time.time()
+        # images = images.to(device)
+        # targets = [target.to(device) for target in targets]
+        # to_device_time = time.time() - to_device_time
 
         loss_dict = model(images, targets)
 
@@ -89,7 +125,7 @@ def do_train(
 
         batch_time = time.time() - end
         end = time.time()
-        meters.update(time=batch_time, data=data_time, device=to_device_time,
+        meters.update(time=batch_time, data=data_time,
                       backward=backward_time, update=params_update_time)
 
         eta_seconds = meters.time.global_avg * (max_iter - iteration)
@@ -117,6 +153,8 @@ def do_train(
             checkpointer.save("model_{:07d}".format(iteration), **arguments)
         if iteration == max_iter:
             checkpointer.save("model_final", **arguments)
+
+        images, targets, idx = prefetcher.next()
 
     total_training_time = time.time() - start_training_time
     total_time_str = str(datetime.timedelta(seconds=total_training_time))
