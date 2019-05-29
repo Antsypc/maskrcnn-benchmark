@@ -18,3 +18,19 @@ class BatchCollator(object):
         targets = transposed_batch[1]
         img_ids = transposed_batch[2]
         return images, targets, img_ids
+#         return SimpleCustomBatch(batch, self.size_divisible)
+#
+#
+# class SimpleCustomBatch(object):
+#
+#     def __init__(self, batch, size_divisible):
+#         transposed_batch = list(zip(*batch))
+#         self.images = to_image_list(transposed_batch[0], size_divisible)
+#         self.targets = transposed_batch[1]
+#         self.img_ids = transposed_batch[2]
+#
+#     def pin_memory(self):
+#         self.images.tensors = self.images.tensors.pin_memory()
+#         for target in self.targets:
+#             target.bbox = target.bbox.pin_memory()
+#         return self
